@@ -1,0 +1,120 @@
+# Libraries import karo
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from groq import Groq
+from dotenv import load_dotenv
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
+import os
+
+# .env file load karo
+load_dotenv()
+
+# FastAPI app banao
+app = FastAPI(
+    title="Credehub AI API",
+    description="Karachi Board Class 9 & 10 AI Assistant",
+    version="1.0.0"
+)
+
+# CORS — Co-founder ki website ko allow karo
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Groq client banao
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+# Vector store load karo — ek baar
+embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2"
+)
+vector_store = FAISS.load_local(
+    "data/faiss_index",
+    embeddings,
+    allow_dangerous_deserialization=True
+)
+
+# Request ka format define karo
+class ChatRequest(BaseModel):
+    question: str
+    subject: str = "Computer Science"
+    grade: int = 9
+
+# Endpoint 1 — Health check
+@app.get("/")
+def home():
+    return {
+        "status": "Credehub AI chal raha hai! ✅",
+        "version": "1.0.0"
+    }
+
+# Endpoint 2 — Chat
+@app.post("/chat")
+def chat(request: ChatRequest):
+    
+    # PDF se relevant context dhundo
+    results = vector_store.similarity_search(request.question, k=3)
+    context = "\n\n".join([doc.page_content for doc in results])
+    
+    # Groq ko bhejo
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {
+                "role": "system",
+               "content": f"""You are Credehub AI Assistant for Karachi Board Class 9 and 10 students.
+
+STRICT RULES — FOLLOW EXACTLY:
+1. Answer ONLY from the curriculum content provided below. Do NOT use outside knowledge.
+2. If the answer is not found in the curriculum content, respond exactly: "Is topic ka jawab curriculum mein nahi mila. Apne teacher se poochein."
+3. LANGUAGE RULE — VERY IMPORTANT:
+   - ALWAYS give answer in BOTH English and Roman Urdu and roman punjabi.
+   - Format MUST be exactly like this:
+
+**English Answer:**
+[Write answer in English here]
+
+**Roman Urdu Answer:**
+[Write same answer in Roman Urdu here - use Roman Urdu only, never Urdu script]
+
+**Roman Punjabi Answer:**
+[Write same answer in Roman Punjabi here - use Roman Punjabi only, never Gurmukhi script]
+
+4. If student writes in Urdu script — still respond in English + Roman Urdu + roman punjabi only
+5. Keep answers simple, short and student friendly
+6. Never make up information
+
+Curriculum Content:
+{context}"""
+            },
+            {
+                "role": "user",
+                "content": request.question
+            }
+        ]
+    )
+    
+    return {
+        "question": request.question,
+        "answer": response.choices[0].message.content,
+        "subject": request.subject,
+        "grade": request.grade
+    }
+
+# Endpoint 3 — Subjects list
+@app.get("/subjects")
+def get_subjects():
+    return {
+        "subjects": [
+            "Computer Science",
+            "Physics",
+            "Chemistry",
+            "English"
+        ],
+        "grades": [9, 10]
+    }
