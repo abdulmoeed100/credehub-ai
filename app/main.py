@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from groq import Groq
 from dotenv import load_dotenv
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
 from langchain_community.vectorstores import FAISS
 import os
 
@@ -30,9 +30,7 @@ app.add_middleware(
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # Vector store load karo — ek baar
-embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/all-MiniLM-L6-v2"
-)
+embeddings = FastEmbedEmbeddings()
 vector_store = FAISS.load_local(
     "data/faiss_index",
     embeddings,
@@ -67,13 +65,13 @@ def chat(request: ChatRequest):
         messages=[
             {
                 "role": "system",
-               "content": f"""You are Credehub AI Assistant for Karachi Board Class 9 and 10 students.
+                "content": f"""You are Credehub AI Assistant for Karachi Board Class 9 and 10 students.
 
 STRICT RULES — FOLLOW EXACTLY:
 1. Answer ONLY from the curriculum content provided below. Do NOT use outside knowledge.
 2. If the answer is not found in the curriculum content, respond exactly: "Is topic ka jawab curriculum mein nahi mila. Apne teacher se poochein."
 3. LANGUAGE RULE — VERY IMPORTANT:
-   - ALWAYS give answer in BOTH English and Roman Urdu and roman punjabi.
+   - ALWAYS give answer in BOTH English and Roman Urdu
    - Format MUST be exactly like this:
 
 **English Answer:**
@@ -83,9 +81,11 @@ STRICT RULES — FOLLOW EXACTLY:
 [Write same answer in Roman Urdu here - use Roman Urdu only, never Urdu script]
 
 **Roman Punjabi Answer:**
-[Write same answer in Roman Punjabi here - use Roman Punjabi only, never Gurmukhi script]
+[Write same answer in Roman Punjabi here - use Roman Punjabi  only, never punjabi script]
+**Roman Pashto Answer:**
+[Write same answer in Roman Pashto here - use Roman Pashto  only, never pashto script]
 
-4. If student writes in Urdu script — still respond in English + Roman Urdu + roman punjabi only
+4. If student writes in Urdu script — still respond in English + Roman Urdu only
 5. Keep answers simple, short and student friendly
 6. Never make up information
 
