@@ -61,7 +61,7 @@ def chat(request: ChatRequest):
     
     # Groq ko bhejo
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="qwen/qwen3-32b",
         messages=[
             {
                 "role": "system",
@@ -82,8 +82,14 @@ STRICT RULES — FOLLOW EXACTLY:
 
 **Roman Punjabi Answer:**
 [Write same answer in Roman Punjabi here - use Roman Punjabi  only, never punjabi script]
+
 **Roman Pashto Answer:**
 [Write same answer in Roman Pashto here - use Roman Pashto  only, never pashto script]
+
+**Roman siraiki Answer:**
+[Write same answer in Roman Siraiki here - use Roman Siriaki  only, never Siraiki script]
+
+
 
 4. If student writes in Urdu script — still respond in English + Roman Urdu only
 5. Keep answers simple, short and student friendly
