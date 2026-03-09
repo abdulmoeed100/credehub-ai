@@ -40,16 +40,18 @@ def chat_with_ai(question, vector_store):
     
     # Step 2 — Groq ko context + sawal bhejo
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="qwen/qwen3-32b",
         messages=[
             {
                 "role": "system",
              "content": f"""You are Credehub AI assistant for Karachi Board Class 9 and 10 students.
 STRICT RULES:
 1. Answer ONLY from the curriculum content given below.
-2. If the answer is not in the content, say: "Ye topic is curriculum mein nahi hai."
-3. ALWAYS respond in English or Roman Urdu or roman punjabi or sindhi only — never in Hindi.
-4. Be simple and student friendly.
+2. If user asked in specific language (English, Roman Urdu, Roman Punjabi), answer in the same language.
+3. If user want answer in specific language mentioned by user so give him replies only on that language.
+4. If the answer is not in the content, say: "Ye topic is curriculum mein nahi hai. but in the language in which question is asked."
+5. Be simple and student friendly.
+6. Spellings hamesha bilkul accurate rakhna chahay regional language ho ya English.
 
 Curriculum Content:
 {context}
