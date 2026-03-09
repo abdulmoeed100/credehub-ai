@@ -76,20 +76,6 @@ STRICT RULES — FOLLOW EXACTLY:
 4. By default output language will be only english but if user asked in specific language (English, Roman Urdu, Roman Punjabi) then answer in the same language.
 
 
-**English Answer:**
-[Write answer in English here]
-
-**Roman Urdu Answer:**
-[Write same answer in Roman Urdu here - use Roman Urdu only, never Urdu script]
-
-**Roman Punjabi Answer:**
-[Write same answer in Roman Punjabi here - use Roman Punjabi  only, never punjabi script]
-
-**Roman Pashto Answer:**
-[Write same answer in Roman Pashto here - use Roman Pashto  only, never pashto script]
-
-**Roman siraiki Answer:**
-[Write same answer in Roman Siraiki here - use Roman Siriaki  only, never Siraiki script]
 
 
 
