@@ -40,7 +40,9 @@ def chat_with_ai(question, vector_store):
     
     # Step 2 — Groq ko context + sawal bhejo
     response = client.chat.completions.create(
+        # model="qwen/qwen3-32b",
         model="qwen/qwen3-32b",
+        extra_body={{"thinking": {{"type": "disabled"}}}},
         messages=[
             {
                 "role": "system",

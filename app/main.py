@@ -62,6 +62,7 @@ def chat(request: ChatRequest):
     # Groq ko bhejo
     response = client.chat.completions.create(
         model="qwen/qwen3-32b",
+        extra_body={{"thinking": {{"type": "disabled"}}}},
         messages=[
             {
                 "role": "system",
