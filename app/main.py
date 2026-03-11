@@ -62,11 +62,11 @@ def chat(request: ChatRequest):
     # Groq ko bhejo
     response = client.chat.completions.create(
         model="qwen/qwen3-32b",
-        extra_body={"thinking": {"type": "disabled"}},
+        # extra_body={"thinking": {"type": "disabled"}},
         messages=[
             {
                 "role": "system",
-                "content": f""" 
+                "content": f""" /no_think
                 You are Credehub AI Assistant for Karachi Board Class 9 and 10 students.
 
 STRICT RULES — FOLLOW EXACTLY:
