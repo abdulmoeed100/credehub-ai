@@ -2,6 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import List, Dict
 from groq import Groq
 from dotenv import load_dotenv
 from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
@@ -41,6 +42,7 @@ vector_store = FAISS.load_local(
 # Request ka format define karo
 class ChatRequest(BaseModel):
     question: str
+    history: List[Dict] = []  # pichli baatein — default khaali list
     subject: str = "Computer Science"
     grade: int = 9
 
@@ -60,13 +62,11 @@ def chat(request: ChatRequest):
     results = vector_store.similarity_search(request.question, k=3)
     context = "\n\n".join([doc.page_content for doc in results])
 
-    # Groq ko bhejo
-    response = client.chat.completions.create(
-        model="qwen/qwen3-32b",
-        messages=[
-            {
-                "role": "system",
-                "content": f"""/no_think
+    # Messages banao — system prompt pehle
+    messages = [
+        {
+            "role": "system",
+            "content": f"""/no_think
 You are Credehub AI Assistant for Karachi Board Class 9 and 10 students in Pakistan.
 
 STRICT RULES — FOLLOW EXACTLY:
@@ -97,19 +97,33 @@ STRICT RULES — FOLLOW EXACTLY:
    - Example answer: "Computer ik electronic machine hai jo data process karda hai te results dinda hai."
    - Do NOT use complex or literary Punjabi — keep it simple like everyday speech.
 
-6. Keep answers simple and student friendly. Give a detailed explanation in 8-10 lines. Use examples where possible.
+6. Give a detailed explanation in 8-10 lines. Use examples where possible.
+
 7. Never make up information. Only use what is in the curriculum content.
 
 8. Spellings must always be accurate — whether English, Roman Urdu, or Roman Punjabi.
 
 Curriculum Content:
 {context}"""
-            },
-            {
-                "role": "user",
-                "content": request.question
-            }
-        ]
+        }
+    ]
+
+    # Purani history add karo — last 10 messages tak limit
+    # Kyun? Zyada history = zyada tokens = slow aur costly
+    last_10 = request.history[-10:]  # sirf last 10 messages lo
+    for msg in last_10:
+        messages.append(msg)
+
+    # Naya question add karo
+    messages.append({
+        "role": "user",
+        "content": request.question
+    })
+
+    # Groq ko bhejo
+    response = client.chat.completions.create(
+        model="qwen/qwen3-32b",
+        messages=messages
     )
 
     # Think tags remove karo — regex se
