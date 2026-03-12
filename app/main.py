@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
 from langchain_community.vectorstores import FAISS
 import os
+import re
 
 # .env file load karo
 load_dotenv()
@@ -54,33 +55,32 @@ def home():
 # Endpoint 2 — Chat
 @app.post("/chat")
 def chat(request: ChatRequest):
-    
+
     # PDF se relevant context dhundo
     results = vector_store.similarity_search(request.question, k=3)
     context = "\n\n".join([doc.page_content for doc in results])
-    
-    # Groq ko bhejo
+
+    # Groq ko bhejo — extra_body nahi (Groq support nahi karta)
     response = client.chat.completions.create(
         model="qwen/qwen3-32b",
-        extra_body={"thinking": {"type": "disabled"}},
         messages=[
             {
                 "role": "system",
-                "content": f""" 
-                You are Credehub AI Assistant for Karachi Board Class 9 and 10 students.
+                "content": f"""/no_think
+You are Credehub AI Assistant for Karachi Board Class 9 and 10 students.
 
 STRICT RULES — FOLLOW EXACTLY:
 1. Answer ONLY from the curriculum content provided below. Do NOT use outside knowledge.
 2. If the answer is not found in the curriculum content, respond exactly: "Is topic ka jawab curriculum mein nahi mila. Apne teacher se poochein."
 3. LANGUAGE RULE — VERY IMPORTANT:
-     If student writes in ROMAN URDU → reply in Roman Urdu only.
+   - If student writes in ENGLISH → reply in English only.
+   - If student writes in ROMAN URDU → reply in Roman Urdu only.
    - If student writes in URDU SCRIPT → reply in Roman Urdu only.
    - DEFAULT language is English.
    - Never mix languages.
-6. Keep answers simple, short and student friendly
-7. Never make up information
-8. Spellings hamesha bilkul accurate rakhna chahay regional language ho ya English.
-
+4. Keep answers simple, short and student friendly.
+5. Never make up information.
+6. Spellings hamesha bilkul accurate rakhna chahay regional language ho ya English.
 
 Curriculum Content:
 {context}"""
@@ -91,20 +91,19 @@ Curriculum Content:
             }
         ]
     )
-    
-   # Pehle answer variable mein rakho
-answer = response.choices[0].message.content
 
-# Tags hata do
-answer = answer.replace("<think>", "").replace("</think>", "").strip()
+    # Think tags remove karo — regex se (newlines bhi handle hoti hain)
+    answer = response.choices[0].message.content
+    answer = re.sub(r'<think>.*?</think>', '', answer, flags=re.DOTALL).strip()
+    answer = re.sub(r'<think>.*', '', answer, flags=re.DOTALL).strip()
 
-# Phir return karo
-return {
-    "question": request.question,
-    "answer": answer,
-    "subject": request.subject,
-    "grade": request.grade
-}
+    return {
+        "question": request.question,
+        "answer": answer,
+        "subject": request.subject,
+        "grade": request.grade
+    }
+
 # Endpoint 3 — Subjects list
 @app.get("/subjects")
 def get_subjects():
