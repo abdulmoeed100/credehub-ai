@@ -62,18 +62,18 @@ def chat(request: ChatRequest):
     # Groq ko bhejo
     response = client.chat.completions.create(
         model="qwen/qwen3-32b",
-        # extra_body={"thinking": {"type": "disabled"}},
+        extra_body={"thinking": {"type": "disabled"}},
         messages=[
             {
                 "role": "system",
-                "content": f""" /no_think
+                "content": f""" 
                 You are Credehub AI Assistant for Karachi Board Class 9 and 10 students.
 
 STRICT RULES — FOLLOW EXACTLY:
 1. Answer ONLY from the curriculum content provided below. Do NOT use outside knowledge.
 2. If the answer is not found in the curriculum content, respond exactly: "Is topic ka jawab curriculum mein nahi mila. Apne teacher se poochein."
-3. If student writes in ENGLISH → reply in English only.
-   - If student writes in ROMAN URDU → reply in Roman Urdu only.
+3. LANGUAGE RULE — VERY IMPORTANT:
+     If student writes in ROMAN URDU → reply in Roman Urdu only.
    - If student writes in URDU SCRIPT → reply in Roman Urdu only.
    - DEFAULT language is English.
    - Never mix languages.
@@ -92,13 +92,19 @@ Curriculum Content:
         ]
     )
     
-    return {
-        "question": request.question,
-        "answer": response.choices[0].message.content,
-        "subject": request.subject,
-        "grade": request.grade
-    }
+   # Pehle answer variable mein rakho
+answer = response.choices[0].message.content
 
+# Tags hata do
+answer = answer.replace("<think>", "").replace("</think>", "").strip()
+
+# Phir return karo
+return {
+    "question": request.question,
+    "answer": answer,
+    "subject": request.subject,
+    "grade": request.grade
+}
 # Endpoint 3 — Subjects list
 @app.get("/subjects")
 def get_subjects():
