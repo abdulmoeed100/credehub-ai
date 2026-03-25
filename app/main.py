@@ -20,7 +20,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS — Co-founder ki website ko allow karo
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,12 +28,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Groq client banao
+# Groq client
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # ─────────────────────────────────────────────────────
-# Subjects ke alag alag indexes load karo
-# Nayi subject add karni ho toh yahan add karo
+# Subject wise indexes load karo — ek baar startup pe
 # ─────────────────────────────────────────────────────
 embeddings = FastEmbedEmbeddings()
 
@@ -51,14 +50,16 @@ INDEXES = {
     # ),
 }
 
-# Request ka format
+# Request format
 class ChatRequest(BaseModel):
     question: str
     history:  List[Dict] = []
     subject:  str = "Computer Science"
     grade:    int = 9
 
+# ─────────────────────────────────────────────────────
 # Endpoint 1 — Health check
+# ─────────────────────────────────────────────────────
 @app.get("/")
 def home():
     return {
@@ -66,7 +67,9 @@ def home():
         "version": "1.0.0"
     }
 
+# ─────────────────────────────────────────────────────
 # Endpoint 2 — Chat
+# ─────────────────────────────────────────────────────
 @app.post("/chat")
 def chat(request: ChatRequest):
 
@@ -76,14 +79,21 @@ def chat(request: ChatRequest):
     # PDF se relevant chunks dhundo
     results = vector_store.similarity_search(request.question, k=3)
 
-    # Context banao — metadata ke saath (page number + subject)
+    # Context banao — subject + unit + topic + page sab include karo
     context_parts = []
     for doc in results:
-        page_num = doc.metadata.get("page_number", "?")
-        subject  = doc.metadata.get("subject", "?")
+        m        = doc.metadata
+        subject  = m.get("subject",          "Computer Science")
+        grade    = m.get("grade",            9)
+        unit     = m.get("unit",             "Unknown Unit")
+        topic    = m.get("topic",            "Unknown Topic")
+        page_num = m.get("pdf_page_number",  "?")
+
         context_parts.append(
-            f"[{subject} — Page {page_num}]\n{doc.page_content}"
+            f"[{subject} Class {grade} | {unit} | Topic: {topic} | Page {page_num}]\n"
+            f"{doc.page_content}"
         )
+
     context = "\n\n".join(context_parts)
 
     # Messages banao
@@ -98,15 +108,16 @@ STRICT RULES — FOLLOW EXACTLY:
 1. Answer ONLY from the curriculum content provided below. Do NOT use outside knowledge.
 
 2. If the answer is not found in the curriculum content, say:
-   - In English: "This topic is not in the curriculum. Please ask your teacher."
-   - In Roman Urdu: "Is topic ka jawab curriculum mein nahi mila. Apne teacher se poochein."
-   - In Roman Punjabi: "Eh topic curriculum wich nahi hai. Apne teacher toun puchho."
+   - In English:      "This topic is not in the curriculum. Please ask your teacher."
+   - In Roman Urdu:   "Is topic ka jawab curriculum mein nahi mila. Apne teacher se poochein."
+   - In Roman Punjabi:"Eh topic curriculum wich nahi hai. Apne teacher toun puchho."
+   - Use whichever matches the student's language.
 
 3. LANGUAGE DETECTION — VERY IMPORTANT:
-   - If student writes in ENGLISH or says "in english" → reply in English only.
-   - If student writes in ROMAN URDU or says "urdu mein batao" → reply in Roman Urdu only.
-   - If student writes in URDU SCRIPT → reply in Roman Urdu only.
-   - If student writes in ROMAN PUNJABI or says "punjabi mein batao" → reply in Roman Punjabi only.
+   - Student writes in ENGLISH or says "in english"         → reply in English only.
+   - Student writes in ROMAN URDU or says "urdu mein batao" → reply in Roman Urdu only.
+   - Student writes in URDU SCRIPT                          → reply in Roman Urdu only.
+   - Student writes in ROMAN PUNJABI or says "punjabi mein" → reply in Roman Punjabi only.
    - DEFAULT language is English.
    - NEVER say "I cannot respond in this language."
    - NEVER mix two languages in one reply.
@@ -121,9 +132,12 @@ STRICT RULES — FOLLOW EXACTLY:
 
 6. Give a detailed explanation in 8-10 lines. Use examples where possible.
 
-7. Never make up information. Only use what is in the curriculum content.
+7. At the end of every answer — mention the source like this:
+   📚 Source: [Unit Name] | Topic: [Topic Name] | Page [Page Number]
 
-8. Spellings must always be accurate.
+8. Never make up information. Only use what is in the curriculum content.
+
+9. Spellings must always be accurate.
 
 Curriculum Content:
 {context}"""
@@ -143,14 +157,14 @@ Curriculum Content:
     # Groq ko bhejo
     response = client.chat.completions.create(
         model="qwen/qwen3-32b",
-        max_tokens=500,
+        max_tokens=600,
         messages=messages
     )
 
     # Think tags remove karo
     answer = response.choices[0].message.content
     answer = re.sub(r'<think>.*?</think>', '', answer, flags=re.DOTALL).strip()
-    answer = re.sub(r'<think>.*', '', answer, flags=re.DOTALL).strip()
+    answer = re.sub(r'<think>.*',          '', answer, flags=re.DOTALL).strip()
 
     return {
         "question": request.question,
@@ -159,7 +173,9 @@ Curriculum Content:
         "grade":    request.grade
     }
 
+# ─────────────────────────────────────────────────────
 # Endpoint 3 — Subjects list
+# ─────────────────────────────────────────────────────
 @app.get("/subjects")
 def get_subjects():
     return {
