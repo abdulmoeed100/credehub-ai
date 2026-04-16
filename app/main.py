@@ -179,11 +179,13 @@ def chat(request: ChatRequest):
     context_parts = []
     for doc in results:
         m = doc.metadata
+        # 👇 CHANGE HERE: actual_page_number use karo agar available ho
+        page_display = m.get('actual_page_number', m.get('pdf_page_number', '?'))
         context_parts.append(
             f"[{m.get('subject','?')} Class {m.get('grade','?')} | "
             f"{m.get('unit','?')} | "
             f"Topic: {m.get('topic','?')} | "
-            f"Page {m.get('pdf_page_number','?')}]\n"
+            f"Page {page_display}]\n"
             f"{doc.page_content}"
         )
     context = "\n\n".join(context_parts)

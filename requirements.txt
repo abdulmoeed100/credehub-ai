@@ -8,6 +8,5 @@ langchain-text-splitters
 faiss-cpu
 pypdf
 fastembed
-langchain-huggingface
 pdfplumber
-rank_bm25
+rank-bm25
