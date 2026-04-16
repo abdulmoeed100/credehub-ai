@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
-from langchain.retrievers import EnsembleRetriever
+from langchain.retrievers.ensemble import EnsembleRetriever
 import pickle
 import os
 import re
@@ -55,7 +55,7 @@ def load_ensemble_retriever(index_path, chunks_path):
         chunks = pickle.load(f)
 
     bm25_retriever   = BM25Retriever.from_documents(chunks)
-    bm25_retriever.k = 3
+    bm25_retriever.k = 6
 
     # Combine — 50% FAISS (semantic) + 50% BM25 (keyword)
     ensemble = EnsembleRetriever(
