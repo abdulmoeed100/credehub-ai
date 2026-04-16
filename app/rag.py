@@ -9,6 +9,12 @@ import re
 import os
 
 # ─────────────────────────────────────────────────────
+# PDF PAGE OFFSET — pehle 6 pages cover/title/preface hain
+# Actual book page 1 = PDF page 7
+# ─────────────────────────────────────────────────────
+PDF_PAGE_OFFSET = 6
+
+# ─────────────────────────────────────────────────────
 # SUBJECTS CONFIG
 # To add a new subject — add one entry here
 # ─────────────────────────────────────────────────────
@@ -31,22 +37,22 @@ SUBJECTS = {
 }
 
 # ─────────────────────────────────────────────────────
-# UNIT MAP — page ranges to unit names
+# UNIT MAP — ACTUAL page numbers ke according (book page)
 # ─────────────────────────────────────────────────────
 UNIT_MAP = [
-    (range(7,  36),  "Unit 1 - Fundamentals of Computer"),
-    (range(36, 52),  "Unit 2 - Fundamentals of Operating System"),
-    (range(52, 71),  "Unit 3 - Office Automation"),
-    (range(71, 101), "Unit 4 - Data Communication and Computer Networks"),
-    (range(101,123), "Unit 5 - Computer Security and Ethics"),
-    (range(123,148), "Unit 6 - Web Development"),
-    (range(148,169), "Unit 7 - Introduction to Database System"),
+    (range(1,  30),  "Unit 1 - Fundamentals of Computer"),      # Book page 1-29
+    (range(30, 46),  "Unit 2 - Fundamentals of Operating System"),  # Book page 30-45
+    (range(46, 65),  "Unit 3 - Office Automation"),             # Book page 46-64
+    (range(65, 95),  "Unit 4 - Data Communication and Computer Networks"),  # Book page 65-94
+    (range(95, 117), "Unit 5 - Computer Security and Ethics"),  # Book page 95-116
+    (range(117, 142), "Unit 6 - Web Development"),              # Book page 117-141
+    (range(142, 163), "Unit 7 - Introduction to Database System"),  # Book page 142-162
 ]
 
-def get_unit(pdf_page_num):
-    """Return unit name based on PDF page number."""
+def get_unit(actual_page_num):
+    """Return unit name based on ACTUAL book page number."""
     for page_range, unit_name in UNIT_MAP:
-        if pdf_page_num in page_range:
+        if actual_page_num in page_range:
             return unit_name
     return "Introduction"
 
@@ -120,17 +126,24 @@ def load_pdf_with_metadata(pdf_path, subject, grade):
 
     for i, page in enumerate(pages):
         pdf_page_num = i + 1
+        actual_page_num = pdf_page_num - PDF_PAGE_OFFSET  # Convert to actual book page
+        
+        # Agar actual page number 1 se kam ho to pdf page number use karo
+        if actual_page_num < 1:
+            actual_page_num = pdf_page_num
+        
         page.metadata["pdf_page_number"] = pdf_page_num
+        page.metadata["actual_page_number"] = actual_page_num  # Actual book page
         page.metadata["subject"]         = subject
         page.metadata["grade"]           = grade
-        page.metadata["unit"]            = get_unit(pdf_page_num)
+        page.metadata["unit"]            = get_unit(actual_page_num)
         page.metadata["topic"]           = topic_map.get(pdf_page_num, "General")
         page.metadata["board"]           = "Karachi Board"
 
     print("\n  Sample metadata (first 3 pages):")
     for page in pages[:3]:
         m = page.metadata
-        print(f"    Page {m['pdf_page_number']:3d} | {m['unit'][:35]:35s} | {m['topic'][:40]}")
+        print(f"    PDF Page {m['pdf_page_number']:3d} → Actual Book Page {m['actual_page_number']:3d} | {m['unit'][:35]:35s} | {m['topic'][:40]}")
 
     return pages
 
@@ -151,7 +164,7 @@ def split_into_chunks(pages):
     print("\n  Sample chunk metadata:")
     for i, chunk in enumerate(chunks[:3]):
         m = chunk.metadata
-        print(f"    Chunk {i+1}: Page {m.get('pdf_page_number','?')} | "
+        print(f"    Chunk {i+1}: Page {m.get('actual_page_number','?')} | "
               f"{m.get('unit','?')[:30]} | {m.get('topic','?')[:35]}")
 
     return chunks
