@@ -1,4 +1,4 @@
-# Libraries import karo
+# Import libraries
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -7,20 +7,23 @@ from groq import Groq
 from dotenv import load_dotenv
 from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain_community.retrievers import BM25Retriever
+from langchain.retrievers import EnsembleRetriever
+import pickle
 import os
 import re
 
-# .env file load karo
+# Load environment variables
 load_dotenv()
 
-# FastAPI app banao
+# Initialize FastAPI
 app = FastAPI(
     title="Credehub AI API",
     description="Karachi Board Class 9 & 10 AI Assistant",
     version="1.0.0"
 )
 
-# CORS
+# CORS — allow frontend access
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,29 +31,109 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Groq client
+# Initialize Groq client
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # ─────────────────────────────────────────────────────
-# Subject wise indexes load karo — ek baar startup pe
+# Load FAISS + BM25 for each subject at startup
 # ─────────────────────────────────────────────────────
 embeddings = FastEmbedEmbeddings()
 
-INDEXES = {
-    "Computer Science": FAISS.load_local(
-        "data/faiss_index/computer_science_9",
+def load_ensemble_retriever(index_path, chunks_path):
+    """Load FAISS + BM25 and combine into EnsembleRetriever."""
+
+    # Load FAISS
+    vector_store = FAISS.load_local(
+        index_path,
         embeddings,
         allow_dangerous_deserialization=True
-    ),
-    # Future subjects — index ready hone pe uncomment karo:
-    # "Physics": FAISS.load_local(
-    #     "data/faiss_index/physics_9",
-    #     embeddings,
-    #     allow_dangerous_deserialization=True
-    # ),
+    )
+    faiss_retriever = vector_store.as_retriever(search_kwargs={"k": 6})
+
+    # Load chunks for BM25
+    with open(chunks_path, "rb") as f:
+        chunks = pickle.load(f)
+
+    bm25_retriever   = BM25Retriever.from_documents(chunks)
+    bm25_retriever.k = 3
+
+    # Combine — 50% FAISS (semantic) + 50% BM25 (keyword)
+    ensemble = EnsembleRetriever(
+        retrievers=[faiss_retriever, bm25_retriever],
+        weights=[0.5, 0.5]
+    )
+
+    return ensemble, vector_store
+
+# Load Computer Science retriever
+CS_ENSEMBLE, CS_VECTOR_STORE = load_ensemble_retriever(
+    "data/faiss_index/computer_science_9",
+    "data/faiss_index/computer_science_9/chunks.pkl"
+)
+
+# Subject → retriever mapping
+RETRIEVERS = {
+    "Computer Science": CS_ENSEMBLE,
+    # Add more subjects when ready:
+    # "Physics": load_ensemble_retriever("data/faiss_index/physics_9", "data/faiss_index/physics_9/chunks.pkl")[0],
 }
 
+# Subject → vector store mapping (used for filtered search)
+VECTOR_STORES = {
+    "Computer Science": CS_VECTOR_STORE,
+    # "Physics": ...,
+}
+
+# ─────────────────────────────────────────────────────
+# Unit keyword detection
+# ─────────────────────────────────────────────────────
+UNIT_KEYWORDS = {
+    "unit 1": "Unit 1 - Fundamentals of Computer",
+    "unit 2": "Unit 2 - Fundamentals of Operating System",
+    "unit 3": "Unit 3 - Office Automation",
+    "unit 4": "Unit 4 - Data Communication and Computer Networks",
+    "unit 5": "Unit 5 - Computer Security and Ethics",
+    "unit 6": "Unit 6 - Web Development",
+    "unit 7": "Unit 7 - Introduction to Database System",
+    # Topic keywords
+    "computer":           "Unit 1 - Fundamentals of Computer",
+    "hardware":           "Unit 1 - Fundamentals of Computer",
+    "software":           "Unit 1 - Fundamentals of Computer",
+    "cpu":                "Unit 1 - Fundamentals of Computer",
+    "ram":                "Unit 1 - Fundamentals of Computer",
+    "generation":         "Unit 1 - Fundamentals of Computer",
+    "operating system":   "Unit 2 - Fundamentals of Operating System",
+    "windows":            "Unit 2 - Fundamentals of Operating System",
+    "ms word":            "Unit 3 - Office Automation",
+    "ms excel":           "Unit 3 - Office Automation",
+    "excel":              "Unit 3 - Office Automation",
+    "network":            "Unit 4 - Data Communication and Computer Networks",
+    "topology":           "Unit 4 - Data Communication and Computer Networks",
+    "transmission":       "Unit 4 - Data Communication and Computer Networks",
+    "security":           "Unit 5 - Computer Security and Ethics",
+    "malware":            "Unit 5 - Computer Security and Ethics",
+    "virus":              "Unit 5 - Computer Security and Ethics",
+    "ethics":             "Unit 5 - Computer Security and Ethics",
+    "html":               "Unit 6 - Web Development",
+    "web":                "Unit 6 - Web Development",
+    "website":            "Unit 6 - Web Development",
+    "hyperlink":          "Unit 6 - Web Development",
+    "database":           "Unit 7 - Introduction to Database System",
+    "dbms":               "Unit 7 - Introduction to Database System",
+    "sql":                "Unit 7 - Introduction to Database System",
+}
+
+def detect_unit(question: str):
+    """Detect which unit the question is about."""
+    q = question.lower()
+    for keyword, unit in UNIT_KEYWORDS.items():
+        if keyword in q:
+            return unit
+    return None
+
+# ─────────────────────────────────────────────────────
 # Request format
+# ─────────────────────────────────────────────────────
 class ChatRequest(BaseModel):
     question: str
     history:  List[Dict] = []
@@ -63,7 +146,7 @@ class ChatRequest(BaseModel):
 @app.get("/")
 def home():
     return {
-        "status": "Credehub AI chal raha hai! ✅",
+        "status": "Credehub AI is running! ✅",
         "version": "1.0.0"
     }
 
@@ -73,97 +156,98 @@ def home():
 @app.post("/chat")
 def chat(request: ChatRequest):
 
-    # Sahi subject ka index lo
-    vector_store = INDEXES.get(request.subject, INDEXES["Computer Science"])
+    # Detect unit from question
+    detected_unit = detect_unit(request.question)
 
-    # PDF se relevant chunks dhundo
-    results = vector_store.similarity_search(request.question, k=3)
+    if detected_unit:
+        # Unit detected — use FAISS with metadata filter for precision
+        vector_store = VECTOR_STORES.get(request.subject, CS_VECTOR_STORE)
+        results = vector_store.similarity_search(
+            request.question,
+            k=5,
+            filter={"unit": detected_unit}
+        )
+        # Fallback — if filter returns nothing, use hybrid search
+        if not results:
+            retriever = RETRIEVERS.get(request.subject, CS_ENSEMBLE)
+            results   = retriever.invoke(request.question)
+    else:
+        # No unit detected — use hybrid search (FAISS + BM25)
+        retriever = RETRIEVERS.get(request.subject, CS_ENSEMBLE)
+        results   = retriever.invoke(request.question)
 
-    # Context banao — subject + unit + topic + page sab include karo
+    # Build context with full metadata
     context_parts = []
     for doc in results:
-        m        = doc.metadata
-        subject  = m.get("subject",          "Computer Science")
-        grade    = m.get("grade",            9)
-        unit     = m.get("unit",             "Unknown Unit")
-        topic    = m.get("topic",            "Unknown Topic")
-        page_num = m.get("pdf_page_number",  "?")
-
+        m = doc.metadata
         context_parts.append(
-            f"[{subject} Class {grade} | {unit} | Topic: {topic} | Page {page_num}]\n"
+            f"[{m.get('subject','?')} Class {m.get('grade','?')} | "
+            f"{m.get('unit','?')} | "
+            f"Topic: {m.get('topic','?')} | "
+            f"Page {m.get('pdf_page_number','?')}]\n"
             f"{doc.page_content}"
         )
-
     context = "\n\n".join(context_parts)
 
-    # Messages banao
+    # Build messages
     messages = [
         {
             "role": "system",
             "content": f"""/no_think
-You are Credehub AI Assistant for Karachi Board Class 9 and 10 students in Pakistan.
+You are Credehub AI — an assistant for Karachi Board Class 9 and 10 students in Pakistan.
 
 STRICT RULES — FOLLOW EXACTLY:
 
-1. Answer ONLY from the curriculum content provided below.
-   STRICTLY forbidden to add any information not present in the content.
-   If information is incomplete — say exactly that, do not fill gaps from outside knowledge.
-```
-2. If the answer is not found in the curriculum content, say:
-   - In English:      "This topic is not in the curriculum. Please ask your teacher."
-   - In Roman Urdu:   "Is topic ka jawab curriculum mein nahi mila. Apne teacher se poochein."
-   - In Roman Punjabi:"Eh topic curriculum wich nahi hai. Apne teacher toun puchho."
-   - Use whichever matches the student's language.
+1. Answer ONLY from the curriculum content provided below in the brackets [].
+   - NEVER use your own knowledge to fill gaps.
+   - NEVER mention topics, units, or concepts not present in the content below.
+   - If the answer is not found, say: "This topic is not found in the curriculum. Please ask your teacher."
 
-3. LANGUAGE DETECTION — VERY IMPORTANT:
-   - Student writes in ENGLISH or says "in english"         → reply in English only.
-   - Student writes in ROMAN URDU or says "urdu mein batao" → reply in Roman Urdu only.
-   - Student writes in URDU SCRIPT                          → reply in Roman Urdu only.
-   - Student writes in ROMAN PUNJABI or says "punjabi mein" → reply in Roman Punjabi only.
-   - DEFAULT language is English.
+2. LANGUAGE DETECTION:
+   - Student writes in ENGLISH or says "in english"          → reply in English only.
+   - Student writes in ROMAN URDU or says "urdu mein batao"  → reply in Roman Urdu only.
+   - Student writes in URDU SCRIPT                           → reply in Roman Urdu only.
+   - Student writes in ROMAN PUNJABI or says "punjabi mein"  → reply in Roman Punjabi only.
+   - DEFAULT is English if language cannot be detected.
    - NEVER say "I cannot respond in this language."
    - NEVER mix two languages in one reply.
 
-4. ROMAN URDU GUIDE:
-   - Simple words: Yeh, Hai, Tha, Karta, Nahi, Matlab, Jaise, Kyunki
-   - Example: "Computer ek electronic machine hai jo data process karta hai."
+3. ROMAN URDU STYLE:
+   Example: "Computer ek electronic machine hai jo data process karta hai."
 
-5. ROMAN PUNJABI GUIDE:
-   - Simple words: Eh, Hai, Si, Karda, Nahi, Matlab, Jive, Tusi, Wich, Ton
-   - Example: "Computer ik electronic machine hai jo data process karda hai."
+4. ROMAN PUNJABI STYLE:
+   Example: "Computer ik electronic machine hai jo data process karda hai."
 
-6. Give a detailed explanation in 8-10 lines. Use examples where possible.
+5. Give a detailed answer in 8-10 lines with examples where possible.
 
-7. At the end of every answer — mention the source like this:
-   📚 Source: [Unit Name] | Topic: [Topic Name] | Page [Page Number]
+6. At the end of every answer mention the source:
+   📚 Source: [Unit Name] | Topic: [Topic Name] | Page [Number]
 
-8. Never make up information. Only use what is in the curriculum content.
-
-9. Spellings must always be accurate.
+7. Spellings must always be accurate in all languages.
 
 Curriculum Content:
 {context}"""
         }
     ]
 
-    # History add karo — last 10 messages
+    # Add chat history — last 10 messages only
     for msg in request.history[-10:]:
         messages.append(msg)
 
-    # Naya sawaal add karo
+    # Add new question
     messages.append({
         "role": "user",
         "content": request.question
     })
 
-    # Groq ko bhejo
+    # Send to Groq
     response = client.chat.completions.create(
         model="qwen/qwen3-32b",
         max_tokens=600,
         messages=messages
     )
 
-    # Think tags remove karo
+    # Remove think tags
     answer = response.choices[0].message.content
     answer = re.sub(r'<think>.*?</think>', '', answer, flags=re.DOTALL).strip()
     answer = re.sub(r'<think>.*',          '', answer, flags=re.DOTALL).strip()
