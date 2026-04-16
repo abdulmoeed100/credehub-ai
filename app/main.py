@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
-from langchain.retrievers.ensemble import EnsembleRetriever
 import pickle
 import os
 import re
@@ -39,50 +38,53 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 # ─────────────────────────────────────────────────────
 embeddings = FastEmbedEmbeddings()
 
-def load_ensemble_retriever(index_path, chunks_path):
-    """Load FAISS + BM25 and combine into EnsembleRetriever."""
-
+def load_retrievers(index_path, chunks_path):
+    """Load FAISS and BM25 retrievers separately."""
+    
     # Load FAISS
     vector_store = FAISS.load_local(
         index_path,
         embeddings,
         allow_dangerous_deserialization=True
     )
-    faiss_retriever = vector_store.as_retriever(search_kwargs={"k": 6})
-
+    
     # Load chunks for BM25
     with open(chunks_path, "rb") as f:
         chunks = pickle.load(f)
+    
+    bm25_retriever = BM25Retriever.from_documents(chunks)
+    bm25_retriever.k = 3
+    
+    return vector_store, bm25_retriever, chunks
 
-    bm25_retriever   = BM25Retriever.from_documents(chunks)
-    bm25_retriever.k = 6
+def hybrid_search(query, vector_store, bm25_retriever, chunks, k=6):
+    """Combine FAISS (semantic) + BM25 (keyword) search manually."""
+    
+    # FAISS semantic search
+    semantic_results = vector_store.similarity_search(query, k=k)
+    
+    # BM25 search
+    bm25_results = bm25_retriever.invoke(query)
+    
+    # Combine results (remove duplicates by content)
+    all_docs = semantic_results + bm25_results
+    unique_docs = []
+    seen_content = set()
+    
+    for doc in all_docs:
+        # Use first 500 chars as unique identifier
+        content_key = doc.page_content[:500]
+        if content_key not in seen_content:
+            unique_docs.append(doc)
+            seen_content.add(content_key)
+    
+    return unique_docs[:k]
 
-    # Combine — 50% FAISS (semantic) + 50% BM25 (keyword)
-    ensemble = EnsembleRetriever(
-        retrievers=[faiss_retriever, bm25_retriever],
-        weights=[0.5, 0.5]
-    )
-
-    return ensemble, vector_store
-
-# Load Computer Science retriever
-CS_ENSEMBLE, CS_VECTOR_STORE = load_ensemble_retriever(
+# Load Computer Science
+CS_VECTOR_STORE, CS_BM25_RETRIEVER, CS_CHUNKS = load_retrievers(
     "data/faiss_index/computer_science_9",
     "data/faiss_index/computer_science_9/chunks.pkl"
 )
-
-# Subject → retriever mapping
-RETRIEVERS = {
-    "Computer Science": CS_ENSEMBLE,
-    # Add more subjects when ready:
-    # "Physics": load_ensemble_retriever("data/faiss_index/physics_9", "data/faiss_index/physics_9/chunks.pkl")[0],
-}
-
-# Subject → vector store mapping (used for filtered search)
-VECTOR_STORES = {
-    "Computer Science": CS_VECTOR_STORE,
-    # "Physics": ...,
-}
 
 # ─────────────────────────────────────────────────────
 # Unit keyword detection
@@ -155,27 +157,24 @@ def home():
 # ─────────────────────────────────────────────────────
 @app.post("/chat")
 def chat(request: ChatRequest):
-
+    
     # Detect unit from question
     detected_unit = detect_unit(request.question)
-
+    
     if detected_unit:
         # Unit detected — use FAISS with metadata filter for precision
-        vector_store = VECTOR_STORES.get(request.subject, CS_VECTOR_STORE)
-        results = vector_store.similarity_search(
+        results = CS_VECTOR_STORE.similarity_search(
             request.question,
             k=5,
             filter={"unit": detected_unit}
         )
         # Fallback — if filter returns nothing, use hybrid search
         if not results:
-            retriever = RETRIEVERS.get(request.subject, CS_ENSEMBLE)
-            results   = retriever.invoke(request.question)
+            results = hybrid_search(request.question, CS_VECTOR_STORE, CS_BM25_RETRIEVER, CS_CHUNKS, k=6)
     else:
         # No unit detected — use hybrid search (FAISS + BM25)
-        retriever = RETRIEVERS.get(request.subject, CS_ENSEMBLE)
-        results   = retriever.invoke(request.question)
-
+        results = hybrid_search(request.question, CS_VECTOR_STORE, CS_BM25_RETRIEVER, CS_CHUNKS, k=6)
+    
     # Build context with full metadata
     context_parts = []
     for doc in results:
@@ -188,7 +187,7 @@ def chat(request: ChatRequest):
             f"{doc.page_content}"
         )
     context = "\n\n".join(context_parts)
-
+    
     # Build messages
     messages = [
         {
@@ -229,29 +228,29 @@ Curriculum Content:
 {context}"""
         }
     ]
-
+    
     # Add chat history — last 10 messages only
     for msg in request.history[-10:]:
         messages.append(msg)
-
+    
     # Add new question
     messages.append({
         "role": "user",
         "content": request.question
     })
-
+    
     # Send to Groq
     response = client.chat.completions.create(
         model="qwen/qwen3-32b",
         max_tokens=600,
         messages=messages
     )
-
+    
     # Remove think tags
     answer = response.choices[0].message.content
     answer = re.sub(r'<think>.*?</think>', '', answer, flags=re.DOTALL).strip()
     answer = re.sub(r'<think>.*',          '', answer, flags=re.DOTALL).strip()
-
+    
     return {
         "question": request.question,
         "answer":   answer,
