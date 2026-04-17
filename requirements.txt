@@ -10,3 +10,5 @@ pypdf
 fastembed
 pdfplumber
 rank-bm25
+langchain-huggingface
+sentence-transformers

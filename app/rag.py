@@ -1,7 +1,7 @@
 # Import libraries
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 import pdfplumber
 import pickle
@@ -155,8 +155,8 @@ def split_into_chunks(pages):
     print("\n  Splitting into chunks...")
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=100
+        chunk_size=2000,
+        chunk_overlap=200
     )
     chunks = splitter.split_documents(pages)
     print(f"  Total chunks: {len(chunks)}")
@@ -179,7 +179,11 @@ def create_vector_store(chunks, index_path, chunks_path):
     os.makedirs(index_path, exist_ok=True)
 
     # Save FAISS index
-    embeddings   = FastEmbedEmbeddings()
+    embeddings = HuggingFaceEmbeddings(
+    model_name="BAAI/bge-small-en-v1.5",
+    model_kwargs={'device': 'cpu'},
+    encode_kwargs={'normalize_embeddings': True}
+)
     vector_store = FAISS.from_documents(chunks, embeddings)
     vector_store.save_local(index_path)
     print(f"  FAISS index saved: {index_path} ✅")
