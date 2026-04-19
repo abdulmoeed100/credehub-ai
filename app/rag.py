@@ -155,8 +155,8 @@ def split_into_chunks(pages):
     print("\n  Splitting into chunks...")
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=2000,
-        chunk_overlap=200
+        chunk_size=1500,
+        chunk_overlap=150
     )
     chunks = splitter.split_documents(pages)
     print(f"  Total chunks: {len(chunks)}")
