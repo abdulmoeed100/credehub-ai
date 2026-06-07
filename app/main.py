@@ -1,5 +1,5 @@
 # Import libraries
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict
@@ -11,6 +11,21 @@ from langchain_community.retrievers import BM25Retriever
 import pickle
 import os
 import re
+
+# Assessment module — add app/ dir to sys.path so import works
+# regardless of where uvicorn is launched from
+import sys as _sys
+import pathlib as _pathlib
+_sys.path.insert(0, str(_pathlib.Path(__file__).parent))
+
+from assessment import (
+    AssessmentRequest,
+    AssessmentResponse,
+    ReportRequest,
+    AssessmentReport,
+    generate_assessment,
+    generate_report,
+)
 
 # Load environment variables
 load_dotenv()
@@ -339,3 +354,57 @@ def get_subjects():
         "subjects": ["Computer Science", "Physics", "Chemistry", "English"],
         "grades": [9, 10]
     }
+
+
+# ============================================================
+# ENDPOINT 4 — Generate MCQ Assessment
+# POST /assessment/generate
+# Body: { "num_questions": 20, "subject": "Computer Science", "grade": 9 }
+# ============================================================
+@app.post("/assessment/generate", response_model=AssessmentResponse)
+def assessment_generate(request: AssessmentRequest):
+    """
+    Generate a fresh set of MCQs from across all book chapters.
+    AI creates new questions every time — never cached.
+    """
+    try:
+        result = generate_assessment(
+            request=request,
+            vector_store=CS_VECTOR_STORE,
+            bm25_retriever=CS_BM25_RETRIEVER,
+            chunks=CS_CHUNKS,
+            client=client,
+        )
+        if result.total_questions == 0:
+            raise HTTPException(
+                status_code=500,
+                detail="MCQ generation failed. Please try again."
+            )
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ============================================================
+# ENDPOINT 5 — Generate Assessment Report
+# POST /assessment/report
+# Body: { "questions": [...], "student_answers": [...], "student_name": "" }
+# ============================================================
+@app.post("/assessment/report", response_model=AssessmentReport)
+def assessment_report(request: ReportRequest):
+    """
+    Score the student's answers and generate a full AI assessment report.
+    Returns unit-wise breakdown, strong/weak topics, and AI narrative.
+    """
+    if not request.questions:
+        raise HTTPException(status_code=400, detail="No questions provided.")
+    if not request.student_answers:
+        raise HTTPException(status_code=400, detail="No answers provided.")
+
+    try:
+        report = generate_report(request=request, client=client)
+        return report
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
