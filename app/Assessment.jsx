@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 
 // ─── CONFIG ─────────────────────────────────────────────────
 // Change this to your Render backend URL when deployed
-const API_BASE = 'https://credehub-ai.onrender.com';
+const API_BASE = 'https://moeed77-credehub-ai.hf.space';
 // const API_BASE = 'http://localhost:8000'; // for local dev
 
 // ─── STYLES ─────────────────────────────────────────────────
