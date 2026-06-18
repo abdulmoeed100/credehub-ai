@@ -1,8 +1,8 @@
 ---
 title: Credehub AI
 emoji: 🎓
-colorFrom: teal
-colorTo: navy
+colorFrom: green
+colorTo: indigo
 sdk: docker
 pinned: false
 ---
