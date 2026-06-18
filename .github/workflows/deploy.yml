@@ -16,9 +16,9 @@ jobs:
           fetch-depth: 0
           lfs: true
 
-      - name: Sync to Hugging Face Space
-        uses: huggingface/hub-sync@v0.1.0
-        with:
-          github_repo_id: abdulmoeed100/credehub-ai
-          huggingface_repo_id: moeed77/credehub-ai
-          hf_token: ${{ secrets.HF_TOKEN }}
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          # Push the main branch to Hugging Face Space git repository.
+          git push --force https://moeed77:$HF_TOKEN@huggingface.co/spaces/moeed77/credehub-ai main
