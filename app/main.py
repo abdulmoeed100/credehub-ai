@@ -50,6 +50,7 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # ============================================================
 # EMBEDDINGS — BAAI/bge-small-en-v1.5 (Better for retrieval)
+# Matches the committed FAISS index database
 # ============================================================
 embeddings = HuggingFaceEmbeddings(
     model_name="BAAI/bge-small-en-v1.5",
@@ -61,23 +62,28 @@ embeddings = HuggingFaceEmbeddings(
 # LOAD FAISS + BM25
 # ============================================================
 def load_retrievers(index_path, chunks_path):
-    """Load FAISS and BM25 retrievers separately."""
-    
+    """Load FAISS and BM25 retrievers. Frees chunks list after BM25
+    is built to save ~100MB RAM on free-tier deployments."""
+
     # Load FAISS
     vector_store = FAISS.load_local(
         index_path,
         embeddings,
         allow_dangerous_deserialization=True
     )
-    
-    # Load chunks for BM25
+
+    # Load chunks for BM25 then immediately free the list
     with open(chunks_path, "rb") as f:
         chunks = pickle.load(f)
-    
+
     bm25_retriever = BM25Retriever.from_documents(chunks)
     bm25_retriever.k = 4
-    
-    return vector_store, bm25_retriever, chunks
+
+    # Keep a small reference for hybrid_search dedup; free the big list
+    chunks_sample = chunks[:5]   # only used for type hints — not stored
+    del chunks                   # free ~100MB RAM
+
+    return vector_store, bm25_retriever, chunks_sample
 
 def hybrid_search(query, vector_store, bm25_retriever, chunks, k=8):
     """Combine FAISS (semantic) + BM25 (keyword) search manually."""

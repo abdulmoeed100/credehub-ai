@@ -180,10 +180,10 @@ def create_vector_store(chunks, index_path, chunks_path):
 
     # Save FAISS index
     embeddings = HuggingFaceEmbeddings(
-    model_name="BAAI/bge-small-en-v1.5",
-    model_kwargs={'device': 'cpu'},
-    encode_kwargs={'normalize_embeddings': True}
-)
+        model_name="BAAI/bge-small-en-v1.5",
+        model_kwargs={'device': 'cpu'},
+        encode_kwargs={'normalize_embeddings': True}
+    )
     vector_store = FAISS.from_documents(chunks, embeddings)
     vector_store.save_local(index_path)
     print(f"  FAISS index saved: {index_path} ✅")

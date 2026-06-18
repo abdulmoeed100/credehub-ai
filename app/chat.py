@@ -16,7 +16,7 @@ client = Groq(
 # Vector store load karo — PDF ka data
 def load_vector_store():
     embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
+        model_name="BAAI/bge-small-en-v1.5"
     )
     vector_store = FAISS.load_local(
         "data/faiss_index",
