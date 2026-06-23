@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict
-from groq import Groq
+from groq import Groq, AsyncGroq
 from dotenv import load_dotenv
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -46,7 +46,8 @@ app.add_middleware(
 )
 
 # Initialize Groq client
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+from api_rotator import RotatingAsyncGroq
+client = RotatingAsyncGroq()
 
 # ============================================================
 # EMBEDDINGS — BAAI/bge-small-en-v1.5 (Better for retrieval)
@@ -228,7 +229,7 @@ def home():
 # ENDPOINT 2 — Chat
 # ============================================================
 @app.post("/chat")
-def chat(request: ChatRequest):
+async def chat(request: ChatRequest):
     
     question_lower = request.question.lower()
     
@@ -305,17 +306,18 @@ def chat(request: ChatRequest):
     messages = [
         {
             "role": "system",
-            "content": f"""You are Credehub AI — an assistant for Karachi Board Class 9 and 10 students.
+            "content": f"""You are Credehub AI — a helpful study assistant for Karachi Board Class 9 and 10 students.
 
-STRICT RULES:
+RULES (follow strictly):
 
-1. Answer ONLY from the curriculum content below.
-2. If the answer is not found, say: "Is topic ka jawab curriculum mein nahi hai. Apne teacher se poochein."
-3. If user asked about a specific page, give COMPLETE information from that page.
-4. Give detailed answer in 6-8 lines with examples where possible.
-5. At the end of every answer, mention the source:
+1. Answer ONLY from the curriculum content provided below. Do NOT use outside knowledge.
+2. If the answer is not found in the content, say exactly: "Is topic ka jawab curriculum mein nahi hai. Apne teacher se poochein."
+3. If the user asked about a specific page, give COMPLETE information from that page — do not skip anything.
+4. Give a detailed, well-structured answer in 6-8 lines with examples where possible.
+5. Use bullet points or numbered lists when listing items.
+6. At the end of every answer, cite the source:
    📚 Source: [Unit Name] | Page [Number]
-6. NEVER use your own knowledge — only what is in the content below.
+7. NEVER use your own knowledge — only what is in the content below.
 
 CURRICULUM CONTENT:
 {context}"""
@@ -333,9 +335,10 @@ CURRICULUM CONTENT:
     })
     
     # Send to Groq
-    response = client.chat.completions.create(
+    response = await client.chat.completions.create(
         model="openai/gpt-oss-120b",
-        max_tokens=800,
+        max_tokens=1200,
+        reasoning_format="hidden",
         messages=messages
     )
     
@@ -365,13 +368,13 @@ def get_subjects():
 # Body: { "num_questions": 20, "subject": "Computer Science", "grade": 9 }
 # ============================================================
 @app.post("/assessment/generate", response_model=AssessmentResponse)
-def assessment_generate(request: AssessmentRequest):
+async def assessment_generate(request: AssessmentRequest):
     """
     Generate a fresh set of MCQs from across all book chapters.
     AI creates new questions every time — never cached.
     """
     try:
-        result = generate_assessment(
+        result = await generate_assessment(
             request=request,
             vector_store=CS_VECTOR_STORE,
             bm25_retriever=CS_BM25_RETRIEVER,
@@ -396,7 +399,7 @@ def assessment_generate(request: AssessmentRequest):
 # Body: { "questions": [...], "student_answers": [...], "student_name": "" }
 # ============================================================
 @app.post("/assessment/report", response_model=AssessmentReport)
-def assessment_report(request: ReportRequest):
+async def assessment_report(request: ReportRequest):
     """
     Score the student's answers and generate a full AI assessment report.
     Returns unit-wise breakdown, strong/weak topics, and AI narrative.
@@ -407,7 +410,7 @@ def assessment_report(request: ReportRequest):
         raise HTTPException(status_code=400, detail="No answers provided.")
 
     try:
-        report = generate_report(request=request, client=client)
+        report = await generate_report(request=request, client=client)
         return report
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

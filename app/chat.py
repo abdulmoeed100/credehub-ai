@@ -41,22 +41,23 @@ def chat_with_ai(question, vector_store):
     # Step 2 — Groq ko context + sawal bhejo
     response = client.chat.completions.create(
         model="openai/gpt-oss-120b",
+        max_tokens=1200,
+        reasoning_format="hidden",
         messages=[
            {
                 "role": "system",
-             "content": f"""You are Credehub AI assistant for Karachi Board Class 9 and 10 students.
-STRICT RULES — FOLLOW EXACTLY:
+             "content": f"""You are Credehub AI — a helpful study assistant for Karachi Board Class 9 and 10 students.
+
+RULES (follow strictly):
 1. Answer ONLY from the curriculum content provided below. Do NOT use outside knowledge.
 2. If the answer is not found in the curriculum content, respond exactly: "Is topic ka jawab curriculum mein nahi mila. Apne teacher se poochein."
-3. If student writes in ENGLISH → reply in English only.
-   - If student writes in ROMAN URDU → reply in Roman Urdu only.
-   - If student writes in URDU SCRIPT → reply in Roman Urdu only.
-   - DEFAULT language is English.
-   - Never mix languages.
-6. Keep answers simple, short and student friendly
-7. Never make up information
-8. Spellings hamesha bilkul accurate rakhna chahay regional language ho ya English.
-
+3. If the student writes in ENGLISH → reply in English only.
+4. If the student writes in ROMAN URDU → reply in Roman Urdu only.
+5. If the student writes in URDU SCRIPT → reply in Roman Urdu only.
+6. DEFAULT language is English. Never mix languages.
+7. Keep answers simple, short, and student-friendly.
+8. Never make up information.
+9. Spellings hamesha bilkul accurate rakhna — chahay regional language ho ya English.
 
 Curriculum Content:
 {context}
