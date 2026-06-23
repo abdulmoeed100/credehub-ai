@@ -334,15 +334,12 @@ CURRICULUM CONTENT:
     
     # Send to Groq
     response = client.chat.completions.create(
-        model="qwen/qwen3-32b",
+        model="openai/gpt-oss-120b",
         max_tokens=800,
         messages=messages
     )
     
-    # Remove think tags
-    answer = response.choices[0].message.content
-    answer = re.sub(r'<think>.*?</think>', '', answer, flags=re.DOTALL).strip()
-    answer = re.sub(r'<think>.*', '', answer, flags=re.DOTALL).strip()
+    answer = response.choices[0].message.content.strip()
     
     return {
         "question": request.question,

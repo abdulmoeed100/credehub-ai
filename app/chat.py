@@ -40,14 +40,11 @@ def chat_with_ai(question, vector_store):
     
     # Step 2 — Groq ko context + sawal bhejo
     response = client.chat.completions.create(
-        # model="qwen/qwen3-32b",
-        model="qwen/qwen3-32b",
-        # extra_body={"thinking": {"type": "disabled"}}, 
+        model="openai/gpt-oss-120b",
         messages=[
            {
                 "role": "system",
-             "content": f"""/no_think
-             You are Credehub AI assistant for Karachi Board Class 9 and 10 students.
+             "content": f"""You are Credehub AI assistant for Karachi Board Class 9 and 10 students.
 STRICT RULES — FOLLOW EXACTLY:
 1. Answer ONLY from the curriculum content provided below. Do NOT use outside knowledge.
 2. If the answer is not found in the curriculum content, respond exactly: "Is topic ka jawab curriculum mein nahi mila. Apne teacher se poochein."

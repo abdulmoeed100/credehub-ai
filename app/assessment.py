@@ -49,7 +49,7 @@ STRONG_THRESHOLD  = 70.0   # ≥70% → Strong
 AVERAGE_THRESHOLD = 40.0   # 40–69% → Average  |  <40% → Weak
 
 # Groq model used for assessment (can be swapped here only)
-GROQ_MODEL = "qwen/qwen3-32b"
+GROQ_MODEL = "openai/gpt-oss-120b"
 
 # ─────────────────────────────────────────────────────────────
 # PYDANTIC MODELS
