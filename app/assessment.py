@@ -154,6 +154,7 @@ KARACHI BOARD EXAM STYLE:
 - Use precise book-accurate language
 - Distractors must be plausible but clearly incorrect
 - Avoid trick questions
+- Distribute correct answers randomly across options A, B, C, and D. Do NOT default to Option A as the correct answer for all or most questions. Ensure an even and randomized mix of correct keys (A, B, C, D).
 
 CURRICULUM CONTEXT (generate questions ONLY from this content):
 {context}
