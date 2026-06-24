@@ -44,6 +44,18 @@ class RotatingCompletions:
             except Exception as exc:
                 print(f"[Rotator] Exception on Key Index {key_index} ({key_preview}): {exc}")
                 last_exception = exc
+                
+                # Check for permanent auth errors
+                is_auth_error = False
+                if hasattr(exc, "status_code") and exc.status_code == 401:
+                    is_auth_error = True
+                elif "Invalid API Key" in str(exc) or "invalid_api_key" in str(exc) or "API key" in str(exc):
+                    is_auth_error = True
+                    
+                if is_auth_error:
+                    print(f"[Rotator] Removing invalid Key Index {key_index} ({key_preview}) from pool permanently.")
+                    self.parent.remove_client(client)
+                    
                 # Rotate and try next key
                 await asyncio.sleep(0.5)
 
@@ -84,10 +96,27 @@ class RotatingAsyncGroq:
     def get_default_client(self) -> AsyncGroq:
         return AsyncGroq()
 
+    def remove_client(self, client: AsyncGroq):
+        """Permanently remove a permanently invalid client/key from the active pool."""
+        try:
+            if client in self.clients:
+                idx = self.clients.index(client)
+                self.clients.pop(idx)
+                self.keys.pop(idx)
+                # Safeguard index out of bounds
+                if self.index >= len(self.clients):
+                    self.index = 0
+                print(f"[Rotator] Successfully removed key from active pool. Keys remaining: {len(self.clients)}")
+        except Exception as e:
+            print(f"[Rotator] Error removing client: {e}")
+
     async def get_next_client(self) -> AsyncGroq:
         if not self.clients:
             return AsyncGroq()
         async with self._lock:
+            # Adjust index if pool shrunk dynamically
+            if self.index >= len(self.clients):
+                self.index = 0
             client = self.clients[self.index]
             self.index = (self.index + 1) % len(self.clients)
             return client
