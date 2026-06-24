@@ -207,6 +207,32 @@ def detect_unit(question: str):
     return None
 
 # ============================================================
+# BOOK OVERVIEW METADATA (Karachi Board Class 9 CS)
+# ============================================================
+BOOK_OVERVIEW_CONTEXT = """
+[Book Structure | Class 9 Computer Science Textbook (Karachi Board)]
+This textbook has exactly 7 chapters (units):
+- Unit 1: Fundamentals of Computer (Syllabus: Introduction to computer, history, generations of computers, hardware, software, CPU, RAM, ROM, input/output devices) (Pages 1 to 29)
+- Unit 2: Fundamentals of Operating System (Syllabus: OS introduction, functions, types of OS like CLI and GUI, Windows OS, file management) (Pages 30 to 45)
+- Unit 3: Office Automation (Syllabus: MS Word, MS Excel, MS PowerPoint, word processing, spreadsheets, presentations) (Pages 46 to 64)
+- Unit 4: Data Communication and Computer Networks (Syllabus: Data communication components, transmission media, computer networks, LAN, WAN, P2P, Client-Server, network topologies) (Pages 65 to 94)
+- Unit 5: Computer Security and Ethics (Syllabus: Cybercrime, malware, virus, worms, antivirus, computer ethics, intellectual property rights, privacy) (Pages 95 to 116)
+- Unit 6: Web Development (Syllabus: HTML introduction, basic tags, text formatting, hyperlinks, images, tables, forms, CSS basics) (Pages 117 to 141)
+- Unit 7: Introduction to Database System (Syllabus: Database concepts, DBMS, relational database, tables, keys, SQL queries) (Pages 142 to 162)
+"""
+
+def is_book_structure_query(question: str) -> bool:
+    """Detect if the query is asking about the book syllabus, outlines, or chapters."""
+    q = question.lower()
+    keywords = [
+        "chapter", "chapters", "unit", "units", "syllabus", "table of content", 
+        "table of contents", "how many unit", "how many chapter", "book structure",
+        "book outline", "outline", "cs book", "computer science book", "chapters name", 
+        "units name", "chapters list", "units list", "syllabus check", "course outline"
+    ]
+    return any(kw in q for kw in keywords)
+
+# ============================================================
 # REQUEST FORMAT
 # ============================================================
 class ChatRequest(BaseModel):
@@ -232,6 +258,7 @@ def home():
 async def chat(request: ChatRequest):
     
     question_lower = request.question.lower()
+    is_meta = is_book_structure_query(request.question)
     
     # CHECK FOR PAGE NUMBER
     page_match = re.search(r'page\s+(\d+)', question_lower)
@@ -301,6 +328,10 @@ async def chat(request: ChatRequest):
                 f"[{m.get('unit', '?')} | Page {page_display}]\n{doc.page_content}"
             )
         context = "\n\n".join(context_parts)
+
+    # Prepend Book Overview Context for general book structure queries
+    if is_meta:
+        context = BOOK_OVERVIEW_CONTEXT + "\n\n" + context
     
     # Build messages
     messages = [
@@ -315,8 +346,12 @@ RULES (follow strictly):
 3. If the user asked about a specific page, give COMPLETE information from that page — do not skip anything.
 4. Give a detailed, well-structured answer in 6-8 lines with examples where possible.
 5. Use bullet points or numbered lists when listing items.
-6. At the end of every answer, cite the source:
-   📚 Source: [Unit Name] | Page [Number]
+6. CITATION RULE (MUST FOLLOW EXACTLY):
+   - At the end of every answer, you must cite the source in this exact format:
+     📚 Source: [Unit Name] | Page [Number]
+   - The [Unit Name] and [Number] MUST match the metadata header of the specific content block from which you extracted the answer.
+   - Each content block in the curriculum content is prefixed with `[Unit Name | Page Number]`. Find the block that actually contains the answer and copy the Unit Name and Page Number from its bracketed prefix.
+   - Do NOT mix up the page numbers of different blocks. Do NOT guess or write page ranges (like Page 15-18) unless the information actually came from all those pages. Cite the main page where the answer is found.
 7. NEVER use your own knowledge — only what is in the content below.
 8. LANGUAGE RULES:
    - If the student writes in ENGLISH → you MUST reply in English.
