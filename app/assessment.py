@@ -290,54 +290,70 @@ def _fetch_consolidated_context(
     return "\n\n".join(context_parts)
 
 
-async def generate_assessment(
-    request:        AssessmentRequest,
+async def _generate_mcqs_for_unit(
+    unit: str,
+    count: int,
     vector_store,
     bm25_retriever,
-    chunks,
-    client:         AsyncGroq,
-) -> AssessmentResponse:
-    """
-    Generate a full set of MCQs using a single parallel-context API call to prevent rate limit issues.
-    Called by POST /assessment/generate in main.py.
-    """
-    units  = UNITS_CS9
-    counts = _distribute(request.num_questions, units)
+    client: AsyncGroq,
+    grade: int,
+    subject: str,
+) -> List[MCQQuestion]:
+    if count <= 0:
+        return []
 
-    # 1. Build consolidated context across all requested units
-    context = _fetch_consolidated_context(units, counts, vector_store, bm25_retriever)
+    # 1. Fetch context for this specific unit (pull 2 chunks to keep it rich)
+    try:
+        docs = vector_store.similarity_search(unit, k=3, filter={"unit": unit})
+    except Exception:
+        docs = []
+    if not docs:
+        docs = bm25_retriever.invoke(unit)
+    
+    unit_text = "\n\n".join([doc.page_content for doc in docs[:2]]) if docs else ""
+    
+    # 2. Build prompt for this unit
+    user_msg = f"""\
+Generate exactly {count} MCQ questions for Class {grade} {subject} (Karachi Board) for this unit: {unit}.
 
-    # 2. Build detailed unit distribution instructions
-    dist_details = []
-    for unit, count in zip(units, counts):
-        if count > 0:
-            dist_details.append(f"- {unit}: {count} questions")
-    units_distribution_details = "\n".join(dist_details)
+KARACHI BOARD EXAM STYLE & RULES:
+- Generate EXACTLY {count} distinct and different questions.
+- Use precise book-accurate language from the context.
+- Distractors must be plausible but clearly incorrect.
+- Distribute correct answers randomly across options A, B, C, and D. Do NOT default to Option A as the correct answer for all or most questions. Ensure an even and randomized mix of correct keys (A, B, C, D).
 
-    # 3. Format prompt
-    user_msg = MCQ_USER_PROMPT.format(
-        total_count=request.num_questions,
-        grade=request.grade,
-        subject=request.subject,
-        units_distribution_details=units_distribution_details,
-        context=context,
-    )
+CURRICULUM CONTEXT (generate questions ONLY from this content):
+{unit_text}
 
-    # 4. API Call with retry on rate limit
-    max_retries = 2
-    retry_delay = 5.0
-    raw_response = ""
+OUTPUT FORMAT — You MUST return a JSON object with this exact structure:
+{{
+  "mcqs": [
+    {{
+      "question": "What is CPU?",
+      "options": {{
+        "A": "Arithmetic Logic Unit",
+        "B": "Central Processing Unit",
+        "C": "Control Program Unit",
+        "D": "Core Processing Utility"
+      }},
+      "correct_answer": "B",
+      "unit": "{unit}",
+      "topic": "CPU Components",
+      "difficulty": "easy",
+      "explanation": "CPU is the brain of the computer."
+    }}
+  ]
+}}
+"""
 
-    # Using 4096 ensures the model has full room to output all questions without truncating.
-    # Because prompt context size is reduced to 1 chunk per unit (~3,100 tokens total),
-    # the total requested tokens (prompt + max_tokens) will remain under 8,000 TPM.
-    dynamic_max_tokens = 4096
+    max_retries = 3
+    retry_delay = 2.0
 
-    for attempt in range(max_retries + 1):
+    for attempt in range(max_retries):
         try:
             resp = await client.chat.completions.create(
                 model=GROQ_MODEL,
-                max_tokens=dynamic_max_tokens,
+                max_tokens=2048,
                 messages=[
                     {"role": "system", "content": MCQ_SYSTEM_PROMPT},
                     {"role": "user",   "content": user_msg},
@@ -346,45 +362,104 @@ async def generate_assessment(
                 reasoning_format="hidden",
             )
             raw_response = resp.choices[0].message.content
-            break
-        except groq.RateLimitError as exc:
-            if attempt < max_retries:
-                wait_time = retry_delay * (2 ** attempt)
-                print(f"  [assessment] Rate limit hit on single-call MCQ gen. Waiting {wait_time}s...")
-                await asyncio.sleep(wait_time)
+            data = _extract_json(raw_response)
+            mcqs = data.get("mcqs", [])
+            
+            unit_mcqs = []
+            for raw in mcqs:
+                opts = raw.get("options", {})
+                mcq = MCQQuestion(
+                    id=0, # Will assign serial IDs later
+                    question=raw.get("question", "").strip(),
+                    options=MCQOption(
+                        A=str(opts.get("A", "")).strip(),
+                        B=str(opts.get("B", "")).strip(),
+                        C=str(opts.get("C", "")).strip(),
+                        D=str(opts.get("D", "")).strip(),
+                    ),
+                    correct_answer=str(raw.get("correct_answer", "A")).upper().strip(),
+                    unit=unit,
+                    topic=str(raw.get("topic", "")).strip() or "General",
+                    difficulty=str(raw.get("difficulty", "medium")).lower().strip(),
+                    explanation=str(raw.get("explanation", "")).strip(),
+                )
+                unit_mcqs.append(mcq)
+                
+            # Verify if we got the correct count
+            if len(unit_mcqs) >= count:
+                return unit_mcqs[:count]
             else:
-                raise exc
-
-    # 5. Extract and parse questions
-    data = _extract_json(raw_response)
-    mcqs = data.get("mcqs", [])
-
-    all_mcqs: List[MCQQuestion] = []
-    question_id = 1
-
-    for raw in mcqs:
-        try:
-            opts = raw.get("options", {})
-            mcq = MCQQuestion(
-                id=question_id,
-                question=raw.get("question", "").strip(),
-                options=MCQOption(
-                    A=opts.get("A", ""),
-                    B=opts.get("B", ""),
-                    C=opts.get("C", ""),
-                    D=opts.get("D", ""),
-                ),
-                correct_answer=str(raw.get("correct_answer", "A")).upper(),
-                unit=raw.get("unit", "Unknown"),
-                topic=raw.get("topic", raw.get("unit", "General")),
-                difficulty=raw.get("difficulty", "medium").lower(),
-                explanation=raw.get("explanation", "").strip(),
-            )
-            all_mcqs.append(mcq)
-            question_id += 1
+                print(f"  [assessment] Generated only {len(unit_mcqs)} for {unit}, expected {count}. Retrying...")
+                continue
+                
         except Exception as exc:
-            print(f"  [assessment] Skipping malformed MCQ: {exc}")
-            continue
+            print(f"  [assessment] Error generating MCQs for {unit} (Attempt {attempt+1}): {exc}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay * (2 ** attempt))
+            else:
+                pass
+                
+    return []
+
+
+async def generate_assessment(
+    request:        AssessmentRequest,
+    vector_store,
+    bm25_retriever,
+    chunks,
+    client:         AsyncGroq,
+) -> AssessmentResponse:
+    """
+    Generate a full set of MCQs using parallel unit-wise API calls to guarantee consistency
+    and distribute load across multiple rotating keys.
+    """
+    units  = UNITS_CS9
+    counts = _distribute(request.num_questions, units)
+
+    # 1. Run parallel generation tasks for each unit
+    tasks = []
+    for unit, count in zip(units, counts):
+        tasks.append(
+            _generate_mcqs_for_unit(
+                unit=unit,
+                count=count,
+                vector_store=vector_store,
+                bm25_retriever=bm25_retriever,
+                client=client,
+                grade=request.grade,
+                subject=request.subject
+            )
+        )
+        
+    results = await asyncio.gather(*tasks)
+    
+    # 2. Flatten the results
+    all_mcqs: List[MCQQuestion] = []
+    for unit_mcqs in results:
+        all_mcqs.extend(unit_mcqs)
+        
+    # 3. Auto-recovery if count doesn't match requested total
+    if len(all_mcqs) < request.num_questions:
+        gap = request.num_questions - len(all_mcqs)
+        print(f"  [assessment] Gap detected: generated {len(all_mcqs)} out of {request.num_questions}. Generating {gap} extra questions.")
+        
+        succeeded_units = [unit for unit, count in zip(units, counts) if count > 0]
+        if succeeded_units:
+            extra_mcqs = await _generate_mcqs_for_unit(
+                unit=succeeded_units[0],
+                count=gap,
+                vector_store=vector_store,
+                bm25_retriever=bm25_retriever,
+                client=client,
+                grade=request.grade,
+                subject=request.subject
+            )
+            all_mcqs.extend(extra_mcqs)
+
+    # 4. Trim or pad to exact count and assign clean serial IDs
+    all_mcqs = all_mcqs[:request.num_questions]
+    for idx, mcq in enumerate(all_mcqs):
+        mcq.id = idx + 1
 
     return AssessmentResponse(
         total_questions=len(all_mcqs),
