@@ -347,8 +347,9 @@ RULES (follow strictly):
 4. Give a detailed, well-structured answer in 6-8 lines with examples where possible.
 5. Use bullet points or numbered lists when listing items.
 6. CITATION RULE (MUST FOLLOW EXACTLY):
-   - At the end of every answer, you must cite the source in this exact format:
-     📚 Source: [Unit Name] | Page [Number]
+   - At the end of every answer, you must add a horizontal separator line and cite the source in a blockquote format exactly like this:
+     ---
+     > 📚 **Source:** `[Unit Name] | Page [Number]`
    - The [Unit Name] and [Number] MUST match the metadata header of the specific content block from which you extracted the answer.
    - Each content block in the curriculum content is prefixed with `[Unit Name | Page Number]`. Find the block that actually contains the answer and copy the Unit Name and Page Number from its bracketed prefix.
    - Do NOT mix up the page numbers of different blocks. Do NOT guess or write page ranges (like Page 15-18) unless the information actually came from all those pages. Cite the main page where the answer is found.
