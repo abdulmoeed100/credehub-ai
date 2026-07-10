@@ -283,6 +283,80 @@ def _enrich_query_from_history(question: str, history: list) -> str:
                 return enriched
     return question
 
+
+# ============================================================
+# CS TYPO / ABBREVIATION NORMALIZER
+# ============================================================
+# Maps common spelling mistakes, Roman Urdu variations, and abbreviations
+# to their correct English CS terms so FAISS vector search finds the right chunks.
+_CS_TYPO_MAP = {
+    # Unit 1 — Fundamentals of Computer
+    "compter": "computer", "computr": "computer", "comuter": "computer",
+    "computor": "computer", "cumputer": "computer",
+    "hardwre": "hardware", "hardwar": "hardware", "hadware": "hardware",
+    "softwre": "software", "sofware": "software", "sotware": "software",
+    "processer": "processor", "prcessor": "processor",
+    "generaion": "generation", "genration": "generation",
+    "inpput": "input", "inut": "input", "outpput": "output", "ouput": "output",
+    "memry": "memory", "memmory": "memory",
+    "strage": "storage", "stroage": "storage",
+    "prnter": "printer", "priner": "printer",
+    "moniitor": "monitor", "monitr": "monitor",
+    # Unit 2 — Operating System
+    "oprating": "operating", "operting": "operating", "operatig": "operating",
+    "opearting": "operating", "operatng": "operating",
+    "os": "operating system",
+    "windwos": "windows", "widnows": "windows", "windoes": "windows",
+    "flie": "file", "fils": "file",
+    "diretory": "directory", "directry": "directory",
+    # Unit 3 — Office Automation
+    "ms wrod": "ms word", "msword": "ms word", "word": "ms word",
+    "ms excell": "ms excel", "msexcel": "ms excel", "excell": "excel",
+    "ms pwrpoint": "ms powerpoint", "powerpiont": "powerpoint", "ppt": "powerpoint",
+    "spredsheet": "spreadsheet", "spreedsheet": "spreadsheet",
+    "wodrprocessing": "word processing", "wrod processing": "word processing",
+    "formating": "formatting", "formmating": "formatting",
+    # Unit 4 — Networks
+    "nework": "network", "netwrk": "network", "netwok": "network",
+    "toplogy": "topology", "topollogy": "topology",
+    "protocl": "protocol", "protocal": "protocol",
+    "bandwith": "bandwidth", "bandwdth": "bandwidth",
+    "lan": "local area network", "wan": "wide area network",
+    "transimission": "transmission", "transmision": "transmission",
+    # Unit 5 — Security
+    "secuirty": "security", "securty": "security", "scurity": "security",
+    "malwre": "malware", "malwear": "malware",
+    "vrius": "virus", "viurs": "virus", "virsus": "virus",
+    "anivirus": "antivirus", "anti vrus": "antivirus",
+    "ethic": "ethics", "etics": "ethics",
+    "hackar": "hacker", "hackr": "hacker",
+    # Unit 6 — Web Development
+    "htlm": "html", "httml": "html", "htnl": "html",
+    "csss": "css", "cs3": "css",
+    "hyprlink": "hyperlink", "hyperliink": "hyperlink",
+    "tabel": "table", "tabl": "table",
+    "webstie": "website", "webite": "website",
+    "intenet": "internet", "internt": "internet",
+    # Unit 7 — Database
+    "databse": "database", "dtabase": "database", "databas": "database",
+    "db": "database",
+    "dbms": "database management system",
+    "realtional": "relational", "relatinal": "relational",
+    "qurey": "query", "qurey": "query", "sqql": "sql",
+    "tabel": "table",
+    # Roman Urdu common variations
+    "netswork": "network", "databess": "database",
+    "compyuter": "computer", "softwear": "software",
+}
+
+def _normalize_query(q: str) -> str:
+    """Replace known CS typos/abbreviations with correct terms for better RAG retrieval."""
+    normalized = q.lower()
+    for wrong, correct in _CS_TYPO_MAP.items():
+        # Whole-word replacement to avoid partial matches
+        normalized = re.sub(r'\b' + re.escape(wrong) + r'\b', correct, normalized)
+    return normalized
+
 # ============================================================
 # REQUEST FORMAT
 # ============================================================
@@ -314,6 +388,10 @@ async def chat(request: ChatRequest):
     # Enrich follow-up queries with context from history
     # e.g., "explain this in roman urdu" → "operating system kya hai — explain this in roman urdu"
     rag_query = _enrich_query_from_history(request.question, request.history)
+    
+    # Normalize typos/abbreviations for better RAG retrieval
+    # e.g., "oprating systm" → "operating system", "db" → "database"
+    rag_query = _normalize_query(rag_query)
     
     # CHECK FOR PAGE NUMBER
     page_match = re.search(r'page\s+(\d+)', question_lower)
@@ -397,11 +475,16 @@ async def chat(request: ChatRequest):
 RULES (follow strictly):
 
 1. Answer ONLY from the curriculum content provided below. Do NOT use outside knowledge.
-2. If the answer is not found in the content, say exactly: "Is topic ka jawab curriculum mein nahi hai. Apne teacher se poochein."
-3. If the user asked about a specific page, give COMPLETE information from that page — do not skip anything.
-4. Give a detailed, well-structured answer in 6-8 lines with examples where possible.
-5. Use bullet points or numbered lists when listing items.
-6. CITATION RULE (MUST FOLLOW EXACTLY):
+2. SPELLING & TYPO TOLERANCE: Students often make spelling mistakes in their questions. You MUST try to understand their intent:
+   - If a word looks like a misspelling of a CS term (e.g., "oprating system", "compter", "nework"), treat it as the correct term and answer accordingly.
+   - NEVER say "I don't understand your question" just because of a spelling mistake.
+   - Use the provided curriculum content to figure out what topic the student is asking about.
+   - Only say the default error message if the topic is genuinely not in the curriculum — not because of a typo.
+3. If the answer is truly not found anywhere in the curriculum content provided, say exactly: "Is topic ka jawab curriculum mein nahi hai. Apne teacher se poochein."
+4. If the user asked about a specific page, give COMPLETE information from that page — do not skip anything.
+5. Give a detailed, well-structured answer in 6-8 lines with examples where possible.
+6. Use bullet points or numbered lists when listing items.
+7. CITATION RULE (MUST FOLLOW EXACTLY):
    - At the very end of your response, you MUST add a horizontal line `---` followed by the source in a blockquote format exactly like this:
      ---
      > 📚 **Source:** **`[Unit Name]`** | **`Page [Number]`**
@@ -411,14 +494,14 @@ RULES (follow strictly):
    - The [Unit Name] and [Number] MUST match the metadata header of the specific content block from which you extracted the answer.
    - Each content block in the curriculum content is prefixed with `[Unit Name | Page Number]`. Find the block that actually contains the answer and copy the Unit Name and Page Number from its bracketed prefix.
    - Do NOT mix up the page numbers of different blocks. Do NOT guess or write page ranges (like Page 15-18) unless the information actually came from all those pages. Cite the main page where the answer is found.
-7. NEVER use your own knowledge — only what is in the content below.
-8. LANGUAGE RULES:
+8. NEVER use your own knowledge — only what is in the content below.
+9. LANGUAGE RULES:
    - If the student writes in ENGLISH → you MUST reply in English.
    - If the student writes in ROMAN URDU → you MUST reply in Roman Urdu.
    - If the student writes in URDU SCRIPT (Arabic characters) → you MUST reply in Roman Urdu.
    - DEFAULT language is English.
    - NEVER write in Hindi (Devanagari script) or any script other than Latin/English script.
-9. Format all keyboard shortcuts, commands (like Save, Copy), HTML tags (like <html>), and CLI commands (like dir, cd) inside your response in bold inline code blocks (e.g. **`Ctrl + C`**, **`Save`**, **`dir`**) so they are clearly visible and stand out from the surrounding text.
+10. Format all keyboard shortcuts, commands (like Save, Copy), HTML tags (like <html>), and CLI commands (like dir, cd) inside your response in bold inline code blocks (e.g. **`Ctrl + C`**, **`Save`**, **`dir`**) so they are clearly visible and stand out from the surrounding text.
 
 CURRICULUM CONTENT:
 {context}"""
