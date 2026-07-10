@@ -232,6 +232,57 @@ def is_book_structure_query(question: str) -> bool:
     ]
     return any(kw in q for kw in keywords)
 
+
+# ============================================================
+# FOLLOW-UP QUERY DETECTION + CONTEXT ENRICHMENT
+# ============================================================
+# Short follow-up phrases that don't contain a topic themselves
+_FOLLOWUP_PATTERNS = [
+    r"^(explain|samjhao|samjha|bata|batao|tell me|describe|describe it|isko|is ko|yeh|ye)\b",
+    r"\b(in roman urdu|roman urdu mein|urdu mein|in english|english mein|again|dobara|phir se|detail mein|detail se|more detail|aur detail|detail)\b",
+    r"^(this|yeh|ye|isko|is ko|is baray mein|is topic|is chapter|this topic|this chapter|what about this|is ke baray)$",
+    r"^(can you explain|explain this|is ko explain|samjha do|samjha dena|please explain|please samjhao)\b",
+    r"^(aur batao|more|more info|elaborate|expand|go on|continue|jari rakho|aur|or bhi)$",
+]
+
+def _is_followup(question: str) -> bool:
+    """Return True if the current question looks like a follow-up without a topic."""
+    q = question.strip().lower()
+    # If less than 6 words and no detected unit/page, likely a follow-up
+    words = q.split()
+    if len(words) <= 5:
+        for pattern in _FOLLOWUP_PATTERNS:
+            if re.search(pattern, q):
+                return True
+    # Also catch anything whose main verb is just a language instruction with no noun
+    if re.fullmatch(r'[\w\s]*(roman urdu|urdu|english)[\w\s]*', q) and len(words) <= 8:
+        return True
+    return False
+
+
+def _enrich_query_from_history(question: str, history: list) -> str:
+    """If query is a follow-up, extract the last meaningful topic from history."""
+    if not _is_followup(question) or not history:
+        return question
+    
+    # Walk history backwards: find the last user question that had a real topic
+    for msg in reversed(history):
+        if msg.get("role") == "user":
+            prev_q = msg.get("content", "").strip()
+            if prev_q and not _is_followup(prev_q):
+                # Combine previous topic with current instruction
+                enriched = f"{prev_q} — {question}"
+                return enriched
+        # Also try the last assistant response first sentence as context
+        if msg.get("role") == "assistant":
+            prev_answer = msg.get("content", "").strip()
+            if prev_answer:
+                # Take first 200 chars of last assistant answer as topic hint
+                topic_hint = prev_answer[:200].split("\n")[0]
+                enriched = f"{topic_hint} — {question}"
+                return enriched
+    return question
+
 # ============================================================
 # REQUEST FORMAT
 # ============================================================
@@ -259,6 +310,10 @@ async def chat(request: ChatRequest):
     
     question_lower = request.question.lower()
     is_meta = is_book_structure_query(request.question)
+    
+    # Enrich follow-up queries with context from history
+    # e.g., "explain this in roman urdu" → "operating system kya hai — explain this in roman urdu"
+    rag_query = _enrich_query_from_history(request.question, request.history)
     
     # CHECK FOR PAGE NUMBER
     page_match = re.search(r'page\s+(\d+)', question_lower)
@@ -303,21 +358,21 @@ async def chat(request: ChatRequest):
             context = f"No content found for page {page_num}. Available pages are 1 to 162."
     
     else:
-        # Normal query — check for unit detection
-        detected_unit = detect_unit(request.question)
+        # Use enriched query (topic from history for follow-ups) for RAG retrieval
+        detected_unit = detect_unit(rag_query)
         
         if detected_unit:
             # Unit detected — use FAISS with metadata filter
             results = CS_VECTOR_STORE.similarity_search(
-                request.question,
+                rag_query,
                 k=6,
                 filter={"unit": detected_unit}
             )
             if not results:
-                results = hybrid_search(request.question, CS_VECTOR_STORE, CS_BM25_RETRIEVER, CS_CHUNKS, k=8)
+                results = hybrid_search(rag_query, CS_VECTOR_STORE, CS_BM25_RETRIEVER, CS_CHUNKS, k=8)
         else:
-            # No unit detected — use hybrid search
-            results = hybrid_search(request.question, CS_VECTOR_STORE, CS_BM25_RETRIEVER, CS_CHUNKS, k=8)
+            # No unit detected — use hybrid search with enriched query
+            results = hybrid_search(rag_query, CS_VECTOR_STORE, CS_BM25_RETRIEVER, CS_CHUNKS, k=8)
         
         # Build context with metadata
         context_parts = []
